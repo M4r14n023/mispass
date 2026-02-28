@@ -1,0 +1,1871 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Vault — Gestor de Contraseñas</title>
+<style>
+  :root {
+    --bg: #0d0f14;
+    --bg2: #13161e;
+    --bg3: #1a1e28;
+    --bg4: #222736;
+    --border: #2a2f3e;
+    --accent: #4f8ef7;
+    --accent2: #7c5cfc;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --text: #e8eaf0;
+    --text2: #9aa0b4;
+    --text3: #5c6276;
+    --radius: 10px;
+    --radius-sm: 6px;
+    --shadow: 0 4px 24px rgba(0,0,0,0.5);
+    --font: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --font-ui: system-ui, -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: 15px; }
+  
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg2); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* MODAL */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 16px;
+  }
+  .modal {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 16px;
+    padding: 32px; max-width: 440px; width: 100%; box-shadow: var(--shadow);
+    animation: slideUp .25s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .modal-title { font-size: 1.3rem; font-weight: 700; margin-bottom: 8px; color: var(--text); }
+  .modal-sub { font-size: .85rem; color: var(--text2); margin-bottom: 24px; line-height: 1.5; }
+
+  /* FORMS */
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: .8rem; font-weight: 600; color: var(--text2); margin-bottom: 6px; letter-spacing: .05em; text-transform: uppercase; }
+  .field input, .field textarea, .field select {
+    width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    color: var(--text); padding: 10px 12px; font-size: .95rem; font-family: inherit; outline: none; transition: border-color .15s;
+  }
+  .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--accent); }
+  .field textarea { resize: vertical; min-height: 80px; }
+  .field .input-wrap { position: relative; display: flex; }
+  .field .input-wrap input { flex: 1; padding-right: 40px; }
+  .field .input-wrap button { position: absolute; right: 0; top: 0; bottom: 0; background: none; border: none; color: var(--text3); cursor: pointer; padding: 0 12px; font-size: 1rem; transition: color .15s; }
+  .field .input-wrap button:hover { color: var(--accent); }
+
+  /* STRENGTH BAR */
+  .strength-bar { height: 4px; border-radius: 2px; background: var(--bg4); margin-top: 6px; overflow: hidden; }
+  .strength-fill { height: 100%; border-radius: 2px; transition: width .3s, background .3s; }
+
+  /* BUTTONS */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 10px 20px; border-radius: var(--radius-sm); border: none; cursor: pointer;
+    font-size: .9rem; font-weight: 600; font-family: inherit; transition: all .15s; text-decoration: none;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #3a7ae8; }
+  .btn-secondary { background: var(--bg4); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--bg3); border-color: var(--accent); }
+  .btn-danger { background: rgba(239,68,68,.15); color: var(--red); border: 1px solid rgba(239,68,68,.3); }
+  .btn-danger:hover { background: rgba(239,68,68,.25); }
+  .btn-ghost { background: none; color: var(--text2); }
+  .btn-ghost:hover { color: var(--accent); background: var(--bg3); }
+  .btn-sm { padding: 6px 12px; font-size: .8rem; }
+  .btn-icon { padding: 8px; border-radius: var(--radius-sm); background: none; border: none; color: var(--text2); cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; justify-content: center; }
+  .btn-icon:hover { background: var(--bg3); color: var(--accent); }
+  .btn-block { width: 100%; }
+  .btn-row { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+
+  /* ALERTS */
+  .alert { padding: 10px 14px; border-radius: var(--radius-sm); font-size: .85rem; margin-bottom: 14px; }
+  .alert-error { background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.3); color: #fca5a5; }
+  .alert-success { background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.3); color: #86efac; }
+  .alert-warn { background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.3); color: #fcd34d; }
+
+  /* APP LAYOUT */
+  #app { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  
+  /* TOPBAR */
+  .topbar {
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; padding: 0 16px; height: 56px; flex-shrink: 0;
+  }
+  .topbar-logo { font-weight: 800; font-size: 1.1rem; letter-spacing: -.03em; color: var(--accent); }
+  .topbar-logo span { color: var(--text2); font-weight: 400; }
+  .topbar-spacer { flex: 1; }
+  .topbar-status { font-size: .75rem; color: var(--green); display: flex; align-items: center; gap: 4px; }
+  .topbar-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+  /* NAV */
+  .nav { background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; overflow-x: auto; flex-shrink: 0; }
+  .nav-item {
+    padding: 12px 18px; font-size: .82rem; font-weight: 600; color: var(--text3); cursor: pointer;
+    border-bottom: 2px solid transparent; white-space: nowrap; transition: all .15s; letter-spacing: .03em;
+  }
+  .nav-item:hover { color: var(--text2); }
+  .nav-item.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* CONTENT */
+  .content { flex: 1; overflow-y: auto; padding: 20px 16px; max-width: 900px; margin: 0 auto; width: 100%; }
+
+  /* SEARCH BAR */
+  .searchbar { position: relative; margin-bottom: 16px; }
+  .searchbar input { width: 100%; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px 16px 10px 40px; font-size: .95rem; outline: none; transition: border-color .15s; }
+  .searchbar input:focus { border-color: var(--accent); }
+  .searchbar .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text3); pointer-events: none; }
+
+  /* CARDS */
+  .card-list { display: flex; flex-direction: column; gap: 8px; }
+  .entry-card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 16px; cursor: pointer; transition: all .15s; display: flex; align-items: center; gap: 14px;
+  }
+  .entry-card:hover { border-color: var(--accent); background: var(--bg3); }
+  .entry-card.pinned { border-color: var(--yellow); }
+  .entry-icon {
+    width: 40px; height: 40px; border-radius: 8px; background: var(--bg4); display: flex; align-items: center;
+    justify-content: center; font-size: 1.2rem; flex-shrink: 0; font-weight: 700; color: var(--accent);
+  }
+  .entry-info { flex: 1; min-width: 0; }
+  .entry-name { font-weight: 600; font-size: .95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .entry-meta { font-size: .78rem; color: var(--text2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .entry-actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .tag { display: inline-block; background: var(--bg4); border: 1px solid var(--border); border-radius: 4px; padding: 2px 7px; font-size: .72rem; color: var(--text2); }
+  .tags-row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+
+  /* SECTION HEADER */
+  .section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+  .section-title { font-size: 1.1rem; font-weight: 700; }
+  .section-spacer { flex: 1; }
+
+  /* DETAIL VIEW */
+  .detail-field { margin-bottom: 18px; }
+  .detail-label { font-size: .75rem; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+  .detail-value { font-size: .95rem; color: var(--text); background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px; display: flex; align-items: center; gap: 8px; }
+  .detail-value span { flex: 1; font-family: var(--font); overflow: hidden; text-overflow: ellipsis; }
+  .detail-value a { color: var(--accent); text-decoration: none; }
+  .detail-value a:hover { text-decoration: underline; }
+  .pw-hidden { letter-spacing: .25em; }
+
+  /* HEALTH PANEL */
+  .health-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .health-stat { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .health-stat-num { font-size: 1.8rem; font-weight: 800; }
+  .health-stat-label { font-size: .78rem; color: var(--text2); margin-top: 2px; }
+  .health-stat.danger .health-stat-num { color: var(--red); }
+  .health-stat.warn .health-stat-num { color: var(--yellow); }
+  .health-stat.ok .health-stat-num { color: var(--green); }
+
+  /* GENERATOR */
+  .gen-output { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
+  .gen-output span { font-family: var(--font); font-size: 1rem; flex: 1; word-break: break-all; color: var(--text); }
+  .gen-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .toggle-row { display: flex; align-items: center; gap: 8px; }
+  .toggle-row label { flex: 1; font-size: .88rem; color: var(--text2); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
+
+  /* IMPORT/EXPORT */
+  .import-area { background: var(--bg3); border: 2px dashed var(--border); border-radius: var(--radius); padding: 24px; text-align: center; margin-bottom: 16px; cursor: pointer; transition: border-color .15s; }
+  .import-area:hover { border-color: var(--accent); }
+  .import-area.dragover { border-color: var(--accent); background: rgba(79,142,247,.05); }
+  .preview-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  .preview-table th { background: var(--bg4); padding: 8px 10px; text-align: left; font-size: .75rem; text-transform: uppercase; color: var(--text3); letter-spacing: .05em; }
+  .preview-table td { padding: 8px 10px; border-top: 1px solid var(--border); vertical-align: top; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .preview-table tr:hover td { background: var(--bg3); }
+  .preview-container { overflow-x: auto; max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 12px; }
+
+  /* SETTINGS */
+  .settings-section { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+  .settings-section-title { font-size: .85rem; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .settings-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+  .settings-row-label { flex: 1; font-size: .9rem; }
+  .settings-row-sub { font-size: .78rem; color: var(--text3); margin-top: 2px; }
+
+  /* DIAGNOSTICS */
+  .diag-log { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; font-family: var(--font); font-size: .78rem; max-height: 300px; overflow-y: auto; color: var(--text2); line-height: 1.6; }
+  .diag-log .ok { color: var(--green); }
+  .diag-log .err { color: var(--red); }
+  .diag-log .info { color: var(--accent); }
+
+  /* COPY TOAST */
+  #copy-toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: var(--bg4); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 20px; font-size: .85rem; color: var(--text); transition: transform .25s; z-index: 10000;
+    box-shadow: var(--shadow);
+  }
+  #copy-toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* LOCK SCREEN */
+  #lock-screen { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 5000; }
+  .lock-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 20px; padding: 40px 32px; max-width: 400px; width: 100%; box-shadow: var(--shadow); }
+  .lock-logo { font-size: 2rem; font-weight: 900; letter-spacing: -.05em; margin-bottom: 8px; color: var(--accent); }
+  .lock-sub { color: var(--text2); font-size: .88rem; margin-bottom: 28px; }
+
+  /* EMPTY */
+  .empty { text-align: center; padding: 60px 20px; color: var(--text3); }
+  .empty-icon { font-size: 3rem; margin-bottom: 12px; }
+  .empty p { font-size: .9rem; }
+
+  /* CHIP INPUT */
+  .chip-input-wrap { display: flex; flex-wrap: wrap; gap: 6px; background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; }
+  .chip-input-wrap input { background: none; border: none; outline: none; color: var(--text); font-size: .9rem; font-family: inherit; flex: 1; min-width: 80px; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; background: var(--bg4); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: .78rem; }
+  .chip button { background: none; border: none; color: var(--text3); cursor: pointer; font-size: .8rem; line-height: 1; padding: 0 2px; }
+  .chip button:hover { color: var(--red); }
+
+  /* DIVIDER */
+  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+  /* RESPONSIVE */
+  @media (max-width: 480px) {
+    .gen-options { grid-template-columns: 1fr; }
+    .modal { padding: 24px 20px; }
+    .content { padding: 14px 10px; }
+    .topbar { padding: 0 12px; }
+  }
+
+  /* ANIMATIONS */
+  .fade-in { animation: fadeIn .2s ease; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  /* OTP display */
+  .otp-code { font-family: var(--font); font-size: 1.5rem; letter-spacing: .2em; color: var(--accent); }
+  .otp-progress { height: 3px; background: var(--bg4); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+  .otp-bar { height: 100%; background: var(--accent); transition: width 1s linear; }
+
+  select option { background: var(--bg3); }
+</style>
+</head>
+<body>
+
+<div id="copy-toast">📋 Copiado</div>
+<div id="lock-screen" style="display:none"></div>
+<div id="modal-container"></div>
+<div id="app" style="display:none">
+  <div class="topbar">
+    <div class="topbar-logo">🔐 Vault<span>.app</span></div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-status" id="vault-status">Desbloqueado</div>
+    <button class="btn btn-sm btn-secondary" onclick="UI.lock()" style="margin-left:8px">🔒 Bloquear</button>
+  </div>
+  <div class="nav" id="main-nav">
+    <div class="nav-item active" data-tab="list">🗂 Vault</div>
+    <div class="nav-item" data-tab="generator">🎲 Generador</div>
+    <div class="nav-item" data-tab="health">❤️ Salud</div>
+    <div class="nav-item" data-tab="import">📥 Importar</div>
+    <div class="nav-item" data-tab="export">📤 Exportar</div>
+    <div class="nav-item" data-tab="settings">⚙️ Config</div>
+    <div class="nav-item" data-tab="diagnostics">🔬 Diagnóstico</div>
+  </div>
+  <div class="content fade-in" id="main-content"></div>
+</div>
+
+<script>
+'use strict';
+
+// ============================================================
+// MODULE: CRYPTO
+// ============================================================
+const Crypto = (() => {
+  const PBKDF2_ITERS = 250000;
+  const SALT_BYTES = 16;
+  const IV_BYTES = 12;
+
+  async function deriveKey(password, salt) {
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt, hash: 'SHA-256', iterations: PBKDF2_ITERS },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  async function encrypt(data, password, existingSalt) {
+    const salt = existingSalt || crypto.getRandomValues(new Uint8Array(SALT_BYTES));
+    const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
+    const key = await deriveKey(password, salt);
+    const enc = new TextEncoder();
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(data)));
+    return {
+      salt: Array.from(salt),
+      iv: Array.from(iv),
+      ciphertext: Array.from(new Uint8Array(ciphertext)),
+      iterations: PBKDF2_ITERS,
+      version: 1
+    };
+  }
+
+  async function decrypt(payload, password) {
+    const salt = new Uint8Array(payload.salt);
+    const iv = new Uint8Array(payload.iv);
+    const ciphertext = new Uint8Array(payload.ciphertext);
+    const key = await deriveKey(password, salt);
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+    return JSON.parse(new TextDecoder().decode(decrypted));
+  }
+
+  function estimateStrength(pw) {
+    let score = 0;
+    if (pw.length >= 10) score++;
+    if (pw.length >= 14) score++;
+    if (pw.length >= 20) score++;
+    if (/[A-Z]/.test(pw)) score++;
+    if (/[a-z]/.test(pw)) score++;
+    if (/[0-9]/.test(pw)) score++;
+    if (/[^A-Za-z0-9]/.test(pw)) score++;
+    if (score <= 2) return { level: 0, label: 'Muy débil', color: '#ef4444' };
+    if (score <= 3) return { level: 1, label: 'Débil', color: '#f97316' };
+    if (score <= 5) return { level: 2, label: 'Moderada', color: '#f59e0b' };
+    if (score <= 6) return { level: 3, label: 'Fuerte', color: '#22c55e' };
+    return { level: 4, label: 'Muy fuerte', color: '#10b981' };
+  }
+
+  return { encrypt, decrypt, estimateStrength };
+})();
+
+// ============================================================
+// MODULE: STORAGE (IndexedDB)
+// ============================================================
+const Storage = (() => {
+  let db = null;
+  const DB_NAME = 'vault_db';
+  const DB_VERSION = 1;
+  const STORE_VAULT = 'vault';
+  const STORE_META = 'meta';
+
+  async function init() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = e => {
+        const d = e.target.result;
+        if (!d.objectStoreNames.contains(STORE_VAULT)) d.createObjectStore(STORE_VAULT);
+        if (!d.objectStoreNames.contains(STORE_META)) d.createObjectStore(STORE_META);
+      };
+      req.onsuccess = e => { db = e.target.result; resolve(); };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  function tx(store, mode, fn) {
+    return new Promise((resolve, reject) => {
+      const t = db.transaction(store, mode);
+      const s = t.objectStore(store);
+      const req = fn(s);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function getVault() { return tx(STORE_VAULT, 'readonly', s => s.get('payload')); }
+  async function setVault(payload) { return tx(STORE_VAULT, 'readwrite', s => s.put(payload, 'payload')); }
+  async function getMeta() { return tx(STORE_META, 'readonly', s => s.get('info')); }
+  async function setMeta(info) { return tx(STORE_META, 'readwrite', s => s.put(info, 'info')); }
+  async function clearAll() {
+    await tx(STORE_VAULT, 'readwrite', s => s.clear());
+    await tx(STORE_META, 'readwrite', s => s.clear());
+  }
+
+  // Verify no plaintext stored
+  async function diagnoseStorage() {
+    const v = await getVault();
+    const m = await getMeta();
+    const results = [];
+    if (!v) { results.push({ ok: true, msg: 'Sin vault almacenado todavía' }); return results; }
+    results.push({ ok: true, msg: `Vault encontrado. Ciphertext bytes: ${v.ciphertext?.length ?? '?'}` });
+    results.push({ ok: !v.entries, msg: v.entries ? '❌ Entradas en claro detectadas!' : 'Sin entradas en claro' });
+    results.push({ ok: true, msg: `Salt presente: ${v.salt ? 'Sí' : 'No'}, IV: ${v.iv ? 'Sí' : 'No'}` });
+    results.push({ ok: true, msg: `Iteraciones PBKDF2: ${v.iterations ?? m?.iterations ?? '?'}` });
+    return results;
+  }
+
+  return { init, getVault, setVault, getMeta, setMeta, clearAll, diagnoseStorage };
+})();
+
+// ============================================================
+// MODULE: PARSER
+// ============================================================
+const Parser = (() => {
+  const KNOWN_DOMAINS = {
+    'mercadopago': 'Mercado Pago', 'mercadolibre': 'Mercado Libre', 'google': 'Google',
+    'gmail': 'Gmail', 'facebook': 'Facebook', 'instagram': 'Instagram', 'twitter': 'Twitter/X',
+    'x': 'Twitter/X', 'linkedin': 'LinkedIn', 'github': 'GitHub', 'gitlab': 'GitLab',
+    'amazon': 'Amazon', 'netflix': 'Netflix', 'spotify': 'Spotify', 'youtube': 'YouTube',
+    'apple': 'Apple', 'microsoft': 'Microsoft', 'outlook': 'Outlook', 'hotmail': 'Hotmail',
+    'yahoo': 'Yahoo', 'paypal': 'PayPal', 'dropbox': 'Dropbox', 'slack': 'Slack',
+    'zoom': 'Zoom', 'discord': 'Discord', 'reddit': 'Reddit', 'twitter': 'Twitter',
+    'tiktok': 'TikTok', 'whatsapp': 'WhatsApp', 'telegram': 'Telegram', 'notion': 'Notion',
+    'trello': 'Trello', 'atlassian': 'Atlassian', 'jira': 'Jira', 'stripe': 'Stripe',
+    'shopify': 'Shopify', 'wordpress': 'WordPress', 'cloudflare': 'Cloudflare',
+    'digitalocean': 'DigitalOcean', 'aws': 'Amazon AWS', 'azure': 'Microsoft Azure',
+    'binance': 'Binance', 'coinbase': 'Coinbase', 'twitch': 'Twitch', 'steam': 'Steam',
+    'epic': 'Epic Games', 'playstation': 'PlayStation', 'xbox': 'Xbox',
+    'protonmail': 'ProtonMail', 'proton': 'Proton', 'bitwarden': 'Bitwarden',
+    'namecheap': 'Namecheap', 'godaddy': 'GoDaddy', 'netlify': 'Netlify',
+    'vercel': 'Vercel', 'heroku': 'Heroku', 'reddit': 'Reddit', 'tumblr': 'Tumblr',
+    'pinterest': 'Pinterest', 'airbnb': 'Airbnb', 'uber': 'Uber', 'rappi': 'Rappi',
+    'pedidosya': 'PedidosYa', 'naranja': 'Naranja', 'brubank': 'Brubank',
+    'galicia': 'Banco Galicia', 'santander': 'Banco Santander', 'bbva': 'BBVA',
+    'hsbc': 'HSBC', 'icbc': 'ICBC', 'nacion': 'Banco Nación', 'ciudad': 'Banco Ciudad',
+    'afip': 'AFIP', 'anses': 'ANSES', 'miargentina': 'Mi Argentina',
+  };
+
+  function urlToName(url) {
+    try {
+      if (!url.includes('://')) url = 'https://' + url;
+      const u = new URL(url);
+      let host = u.hostname.replace(/^www\./, '');
+      // Remove TLD + subdomains, get registrable domain base
+      const parts = host.split('.');
+      // Get second-to-last part (domain without TLD)
+      const domain = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+      const lower = domain.toLowerCase();
+      return KNOWN_DOMAINS[lower] || (domain.charAt(0).toUpperCase() + domain.slice(1));
+    } catch { return ''; }
+  }
+
+  // Parse WhatsApp / plain text bulk entries
+  function parseTextBlock(text) {
+    const entries = [];
+    // Patterns to try:
+    // 1. "Site: xxx, User: xxx, Pass: xxx"
+    // 2. "url/user/pass" lines
+    // 3. Generic key: value blocks
+    
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    
+    // Try to group into blocks of 2-5 lines
+    let i = 0;
+    let current = {};
+    
+    // First: look for labeled patterns
+    const labeled = [];
+    const urlRe = /https?:\/\/[^\s]+|(?:url|sitio|site|web|app)[:=\s]+([^\s,]+)/i;
+    const userRe = /(?:user(?:name)?|usuario|correo|email|mail|login|cuenta)[:=\s]+([^\s,]+)/i;
+    const passRe = /(?:pass(?:word)?|contraseña|clave|pw|pwd)[:=\s]+([^\s,]+)/i;
+    const nameRe = /(?:nombre|name|servicio|service|app|platform)[:=\s]+([^\s,]+)/i;
+    
+    // Try single-line CSV-ish: "amazon.com | user@x.com | Pass123"
+    for (const line of lines) {
+      const parts = line.split(/\s*[|,;/]\s*/);
+      if (parts.length >= 3) {
+        const [a, b, c] = parts;
+        if (isUrlLike(a) || isUrlLike(b)) {
+          const url = isUrlLike(a) ? a : (isUrlLike(b) ? b : '');
+          const user = !isUrlLike(b) ? b : c;
+          const pass = parts[parts.length - 1];
+          if (pass !== user) {
+            labeled.push({ url, user, password: pass, name: url ? urlToName(url) : '' });
+            continue;
+          }
+        }
+      }
+      // Labeled pairs
+      const um = line.match(userRe);
+      const pm = line.match(passRe);
+      const lm = line.match(urlRe);
+      const nm = line.match(nameRe);
+      if (um) current.user = um[1];
+      else if (pm) current.password = pm[1];
+      else if (lm) current.url = lm[1] || lm[0];
+      else if (nm) current.name = nm[1];
+      
+      if (current.password && (current.user || current.url || current.name)) {
+        labeled.push({ ...current });
+        current = {};
+      }
+    }
+    if (current.password) labeled.push({ ...current });
+    
+    return labeled.map(e => ({
+      url: e.url || '',
+      user: e.user || '',
+      password: e.password || '',
+      name: e.name || (e.url ? urlToName(e.url) : ''),
+    })).filter(e => e.password);
+  }
+
+  function isUrlLike(s) {
+    return /https?:\/\//.test(s) || /\.[a-z]{2,}/.test(s);
+  }
+
+  return { urlToName, parseTextBlock, KNOWN_DOMAINS };
+})();
+
+// ============================================================
+// MODULE: GENERATOR
+// ============================================================
+const Generator = (() => {
+  const WORDLIST = ['apple','brave','cloud','dance','eagle','flame','grace','honey','ivory','jazzy','kneel','lemon','manor','noble','ocean','petal','queen','river','stone','tiger','ultra','vivid','water','xenon','yacht','zebra','amber','bliss','crisp','delta','ember','frost','gleam','haste','indie','joker','karma','lunar','magic','night','orbit','prism','quest','raise','solar','twist','ultra','vapor','witch','xerox','young','zesty'];
+
+  function generate(opts = {}) {
+    const {
+      length = 20, upper = true, lower = true, numbers = true, symbols = true,
+      noAmbiguous = false, passphrase = false, wordCount = 4
+    } = opts;
+    
+    if (passphrase) {
+      const words = [];
+      for (let i = 0; i < wordCount; i++) {
+        const idx = crypto.getRandomValues(new Uint32Array(1))[0] % WORDLIST.length;
+        words.push(WORDLIST[idx]);
+      }
+      const num = crypto.getRandomValues(new Uint32Array(1))[0] % 100;
+      return words.join('-') + '-' + num;
+    }
+
+    let chars = '';
+    if (upper) chars += noAmbiguous ? 'ABCDEFGHJKLMNPQRSTUVWXYZ' : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    if (lower) chars += noAmbiguous ? 'abcdefghjkmnpqrstuvwxyz' : 'abcdefghijklmnopqrstuvwxyz';
+    if (numbers) chars += noAmbiguous ? '23456789' : '0123456789';
+    if (symbols) chars += '!@#$%^&*()_+-=[]{}|;:,.<>?';
+    if (!chars) chars = 'abcdefghijklmnopqrstuvwxyz';
+
+    const arr = new Uint32Array(length);
+    crypto.getRandomValues(arr);
+    return Array.from(arr).map(n => chars[n % chars.length]).join('');
+  }
+
+  function parseRequirements(text) {
+    const opts = {};
+    const lenM = text.match(/(\d+)\s*(?:char|caract|length|long)/i);
+    if (lenM) opts.length = Math.min(128, Math.max(8, parseInt(lenM[1])));
+    if (/mayusc|upper/i.test(text)) opts.upper = true;
+    if (/minusc|lower/i.test(text)) opts.lower = true;
+    if (/n[úu]mero|digit|number/i.test(text)) opts.numbers = true;
+    if (/s[íi]mbolo|symbol|special/i.test(text)) opts.symbols = true;
+    if (/sin\s+s[íi]mbolo|no symbol/i.test(text)) opts.symbols = false;
+    return opts;
+  }
+
+  return { generate, parseRequirements };
+})();
+
+// ============================================================
+// MODULE: TOTP (basic)
+// ============================================================
+const TOTP = (() => {
+  // Simple TOTP display using SubtleCrypto - no external deps
+  async function generate(secret) {
+    try {
+      // Decode base32
+      const b32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+      const clean = secret.replace(/\s/g, '').toUpperCase();
+      let bits = '', bytes = [];
+      for (const c of clean) { const i = b32.indexOf(c); if (i !== -1) bits += i.toString(2).padStart(5,'0'); }
+      for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(parseInt(bits.slice(i, i+8), 2));
+      const keyBytes = new Uint8Array(bytes);
+      
+      const counter = Math.floor(Date.now() / 30000);
+      const counterBuf = new Uint8Array(8);
+      let c = counter;
+      for (let i = 7; i >= 0; i--) { counterBuf[i] = c & 0xff; c >>= 8; }
+      
+      const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+      const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, counterBuf));
+      const offset = sig[19] & 0xf;
+      const otp = ((sig[offset] & 0x7f) << 24 | sig[offset+1] << 16 | sig[offset+2] << 8 | sig[offset+3]) % 1000000;
+      return otp.toString().padStart(6, '0');
+    } catch { return 'ERROR'; }
+  }
+
+  function timeRemaining() {
+    return 30 - (Math.floor(Date.now() / 1000) % 30);
+  }
+
+  return { generate, timeRemaining };
+})();
+
+// ============================================================
+// VAULT STATE
+// ============================================================
+const VaultState = (() => {
+  let entries = [];
+  let masterKey = null;
+  let locked = true;
+  let settings = {
+    autoLockMinutes: 5,
+    clipboardSeconds: 30,
+    sortBy: 'name',
+  };
+  let customMappings = {};
+  let inactivityTimer = null;
+
+  function isLocked() { return locked; }
+  function getMasterKey() { return masterKey; }
+
+  function resetInactivity() {
+    clearTimeout(inactivityTimer);
+    if (!locked && settings.autoLockMinutes > 0) {
+      inactivityTimer = setTimeout(() => {
+        if (!locked) UI.lock();
+      }, settings.autoLockMinutes * 60000);
+    }
+  }
+
+  function setUnlocked(key, loadedEntries, loadedSettings, loadedMappings) {
+    masterKey = key;
+    entries = loadedEntries || [];
+    settings = { ...settings, ...(loadedSettings || {}) };
+    customMappings = loadedMappings || {};
+    locked = false;
+    resetInactivity();
+  }
+
+  function lock() {
+    masterKey = null;
+    entries = [];
+    locked = true;
+    clearTimeout(inactivityTimer);
+  }
+
+  async function save() {
+    if (!masterKey) throw new Error('No master key');
+    const payload = await Crypto.encrypt({ entries, settings, customMappings, version: 1 }, masterKey);
+    await Storage.setVault(payload);
+    resetInactivity();
+  }
+
+  function getEntries() { return entries; }
+  function getSettings() { return settings; }
+  function getCustomMappings() { return customMappings; }
+
+  function addEntry(e) { entries.push(e); }
+  function updateEntry(e) { const i = entries.findIndex(x => x.id === e.id); if (i !== -1) entries[i] = e; }
+  function deleteEntry(id) { entries = entries.filter(e => e.id !== id); }
+  function setSettings(s) { settings = { ...settings, ...s }; }
+  function setCustomMappings(m) { customMappings = m; }
+
+  function activityPing() { if (!locked) resetInactivity(); }
+
+  return { isLocked, getMasterKey, setUnlocked, lock, save, getEntries, getSettings, getCustomMappings, addEntry, updateEntry, deleteEntry, setSettings, setCustomMappings, activityPing };
+})();
+
+// ============================================================
+// UTILITIES
+// ============================================================
+function uuid() {
+  return crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function ago(ts) {
+  if (!ts) return '';
+  const d = Date.now() - new Date(ts).getTime();
+  const m = Math.floor(d / 60000);
+  if (m < 1) return 'ahora';
+  if (m < 60) return `hace ${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `hace ${h}h`;
+  const day = Math.floor(h / 24);
+  if (day < 30) return `hace ${day}d`;
+  return new Date(ts).toLocaleDateString('es');
+}
+
+let copyToastTimer = null;
+function showToast(msg, duration = 2000) {
+  const t = document.getElementById('copy-toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(copyToastTimer);
+  copyToastTimer = setTimeout(() => t.classList.remove('show'), duration);
+}
+
+let clipboardTimer = null;
+async function copyToClipboard(text, label = 'Copiado') {
+  try {
+    await navigator.clipboard.writeText(text);
+    const sec = VaultState.getSettings().clipboardSeconds;
+    showToast(`📋 ${label}`);
+    clearTimeout(clipboardTimer);
+    if (sec > 0) {
+      clipboardTimer = setTimeout(async () => {
+        try { await navigator.clipboard.writeText(''); } catch {}
+        showToast(`🗑 Portapapeles limpiado`, 1500);
+      }, sec * 1000);
+    }
+  } catch {
+    showToast('⚠️ No se pudo copiar (activa permisos)');
+  }
+}
+
+function getIcon(name) {
+  const n = (name || '').toLowerCase();
+  if (/gmail|mail|correo|outlook|hotmail|yahoo|proton/.test(n)) return '✉️';
+  if (/bank|banco|naci[oó]n|galicia|bbva|santander|hsbc|icbc|ciudad|brubank|naranja/.test(n)) return '🏦';
+  if (/pay|pago|mercado|paypal|stripe|binance|coinbase/.test(n)) return '💳';
+  if (/instagram|ig/.test(n)) return '📸';
+  if (/twitter|x\.com/.test(n)) return '🐦';
+  if (/facebook|fb/.test(n)) return '👤';
+  if (/github|gitlab/.test(n)) return '🐙';
+  if (/spotify/.test(n)) return '🎵';
+  if (/netflix/.test(n)) return '🎬';
+  if (/amazon|aws/.test(n)) return '📦';
+  if (/google/.test(n)) return '🔵';
+  if (/apple/.test(n)) return '🍎';
+  if (/microsoft|azure/.test(n)) return '🪟';
+  if (/discord/.test(n)) return '💬';
+  if (/slack/.test(n)) return '💼';
+  if (/zoom/.test(n)) return '📹';
+  if (/steam|epic|playstation|xbox/.test(n)) return '🎮';
+  return '🔑';
+}
+
+// ============================================================
+// MODULE: UI
+// ============================================================
+const UI = (() => {
+  let currentTab = 'list';
+  let currentEntryId = null;
+  let detailMode = 'view'; // view|edit|create
+  let searchQuery = '';
+  let sortBy = 'name';
+  let filterTag = null;
+
+  // ---- MODALS ----
+  function showModal(html, opts = {}) {
+    const container = document.getElementById('modal-container');
+    container.innerHTML = `<div class="modal-overlay" id="active-modal">${html}</div>`;
+    if (!opts.persistent) {
+      container.querySelector('.modal-overlay').addEventListener('click', e => {
+        if (e.target.id === 'active-modal') closeModal();
+      });
+    }
+  }
+
+  function closeModal() {
+    document.getElementById('modal-container').innerHTML = '';
+  }
+
+  // ---- INITIAL SETUP MODAL ----
+  function showSetupModal() {
+    showModal(`
+      <div class="modal">
+        <div class="modal-title">🔐 Agrega tu Máster Key</div>
+        <div class="modal-sub">Este cartel no volverá a aparecer pues solo pedirá dicha clave de ese momento en adelante.<br><br><strong>Importante:</strong> Si olvidás tu Máster Key, no hay recuperación posible. Guardala en un lugar seguro.</div>
+        <div id="setup-error"></div>
+        <div class="field">
+          <label>Máster Key</label>
+          <div class="input-wrap">
+            <input type="password" id="setup-key" placeholder="Mínimo 10 caracteres" autocomplete="new-password">
+            <button type="button" onclick="UI.togglePw('setup-key', this)">👁</button>
+          </div>
+          <div class="strength-bar"><div class="strength-fill" id="setup-strength-bar" style="width:0%"></div></div>
+          <div id="setup-strength-label" style="font-size:.75rem;color:var(--text3);margin-top:4px"></div>
+        </div>
+        <div class="field">
+          <label>Confirmar Máster Key</label>
+          <div class="input-wrap">
+            <input type="password" id="setup-key2" placeholder="Repite la clave" autocomplete="new-password">
+            <button type="button" onclick="UI.togglePw('setup-key2', this)">👁</button>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary btn-block" onclick="UI.handleSetup()">Crear Vault</button>
+        </div>
+      </div>
+    `, { persistent: true });
+
+    document.getElementById('setup-key').addEventListener('input', e => {
+      const str = Crypto.estimateStrength(e.target.value);
+      const pct = (str.level + 1) / 5 * 100;
+      document.getElementById('setup-strength-bar').style.cssText = `width:${pct}%; background:${str.color}`;
+      document.getElementById('setup-strength-label').textContent = e.target.value.length ? str.label : '';
+    });
+
+    document.getElementById('setup-key').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('setup-key2').focus(); });
+    document.getElementById('setup-key2').addEventListener('keydown', e => { if (e.key === 'Enter') handleSetup(); });
+  }
+
+  async function handleSetup() {
+    const k1 = document.getElementById('setup-key').value;
+    const k2 = document.getElementById('setup-key2').value;
+    const errEl = document.getElementById('setup-error');
+    
+    if (k1.length < 10) { errEl.innerHTML = '<div class="alert alert-error">La Máster Key debe tener al menos 10 caracteres.</div>'; return; }
+    const str = Crypto.estimateStrength(k1);
+    if (str.level < 2) { errEl.innerHTML = '<div class="alert alert-warn">La clave es muy débil. Agregá letras, números y símbolos.</div>'; return; }
+    if (k1 !== k2) { errEl.innerHTML = '<div class="alert alert-error">Las claves no coinciden.</div>'; return; }
+
+    errEl.innerHTML = '<div class="alert alert-warn">Creando vault cifrado...</div>';
+    try {
+      VaultState.setUnlocked(k1, [], {}, {});
+      await VaultState.save();
+      await Storage.setMeta({ created: new Date().toISOString(), version: 1 });
+      closeModal();
+      showApp();
+      renderTab('list');
+    } catch (e) {
+      errEl.innerHTML = `<div class="alert alert-error">Error al crear vault: ${esc(e.message)}</div>`;
+    }
+  }
+
+  // ---- LOCK SCREEN ----
+  function showLockScreen() {
+    document.getElementById('app').style.display = 'none';
+    const ls = document.getElementById('lock-screen');
+    ls.style.display = 'flex';
+    ls.innerHTML = `
+      <div class="lock-card">
+        <div class="lock-logo">🔐 Vault</div>
+        <div class="lock-sub">Ingresá tu Máster Key para continuar</div>
+        <div id="lock-error"></div>
+        <div class="field">
+          <label>Máster Key</label>
+          <div class="input-wrap">
+            <input type="password" id="lock-key" placeholder="Tu clave maestra" autocomplete="current-password" autofocus>
+            <button type="button" onclick="UI.togglePw('lock-key', this)">👁</button>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="UI.handleUnlock()" style="margin-top:4px">Desbloquear</button>
+        <div style="text-align:center;margin-top:20px">
+          <button class="btn btn-ghost btn-sm" onclick="UI.showResetOption()">¿Olvidaste tu clave? (Borrar todo)</button>
+        </div>
+      </div>
+    `;
+    document.getElementById('lock-key').addEventListener('keydown', e => { if (e.key === 'Enter') handleUnlock(); });
+  }
+
+  async function handleUnlock() {
+    const key = document.getElementById('lock-key').value;
+    const errEl = document.getElementById('lock-error');
+    if (!key) return;
+    errEl.innerHTML = '<div class="alert alert-warn">Verificando...</div>';
+    try {
+      const payload = await Storage.getVault();
+      if (!payload) throw new Error('Vault no encontrado');
+      const data = await Crypto.decrypt(payload, key);
+      VaultState.setUnlocked(key, data.entries || [], data.settings, data.customMappings);
+      document.getElementById('lock-screen').style.display = 'none';
+      showApp();
+      renderTab('list');
+    } catch (e) {
+      errEl.innerHTML = '<div class="alert alert-error">Clave incorrecta. Intentá de nuevo.</div>';
+      document.getElementById('lock-key').value = '';
+      document.getElementById('lock-key').focus();
+    }
+  }
+
+  function showResetOption() {
+    if (confirm('⚠️ Esto BORRARÁ permanentemente todos tus datos. No hay recuperación.\n\n¿Estás seguro?')) {
+      if (confirm('Última confirmación: ¿Borrar TODO el vault?')) {
+        Storage.clearAll().then(() => { location.reload(); });
+      }
+    }
+  }
+
+  function showApp() {
+    document.getElementById('app').style.display = 'flex';
+    setupNavListeners();
+    document.addEventListener('click', VaultState.activityPing);
+    document.addEventListener('keydown', VaultState.activityPing);
+  }
+
+  function lock() {
+    VaultState.lock();
+    document.getElementById('app').style.display = 'none';
+    showLockScreen();
+  }
+
+  // ---- NAVIGATION ----
+  function setupNavListeners() {
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        item.classList.add('active');
+        currentTab = item.dataset.tab;
+        currentEntryId = null;
+        detailMode = 'view';
+        renderTab(currentTab);
+      });
+    });
+  }
+
+  function setActiveNav(tab) {
+    document.querySelectorAll('.nav-item').forEach(n => {
+      n.classList.toggle('active', n.dataset.tab === tab);
+    });
+  }
+
+  // ---- MAIN RENDER DISPATCHER ----
+  function renderTab(tab) {
+    currentTab = tab;
+    setActiveNav(tab);
+    const content = document.getElementById('main-content');
+    content.classList.remove('fade-in');
+    void content.offsetWidth;
+    content.classList.add('fade-in');
+    switch (tab) {
+      case 'list': renderList(); break;
+      case 'detail': renderDetail(); break;
+      case 'generator': renderGenerator(); break;
+      case 'health': renderHealth(); break;
+      case 'import': renderImport(); break;
+      case 'export': renderExport(); break;
+      case 'settings': renderSettings(); break;
+      case 'diagnostics': renderDiagnostics(); break;
+      default: renderList();
+    }
+  }
+
+  // ---- LIST VIEW ----
+  function renderList() {
+    const entries = VaultState.getEntries();
+    const q = searchQuery.toLowerCase();
+    const sorted = [...entries].sort((a, b) => {
+      const s = VaultState.getSettings().sortBy || 'name';
+      if (s === 'name') return (a.nombreServicio||'').localeCompare(b.nombreServicio||'');
+      if (s === 'updated') return new Date(b.updatedAt||0) - new Date(a.updatedAt||0);
+      if (s === 'created') return new Date(b.createdAt||0) - new Date(a.createdAt||0);
+      return 0;
+    });
+    const pinned = sorted.filter(e => e.pinned);
+    const unpinned = sorted.filter(e => !e.pinned);
+    const all = [...pinned, ...unpinned];
+    
+    const filtered = all.filter(e => {
+      if (filterTag && !((e.tags||[]).includes(filterTag))) return false;
+      if (!q) return true;
+      return (
+        (e.nombreServicio||'').toLowerCase().includes(q) ||
+        (e.url||'').toLowerCase().includes(q) ||
+        (e.usuario||'').toLowerCase().includes(q) ||
+        (e.notas||'').toLowerCase().includes(q) ||
+        (e.tags||[]).some(t => t.toLowerCase().includes(q))
+      );
+    });
+
+    // Collect all tags
+    const allTags = [...new Set(entries.flatMap(e => e.tags || []))].sort();
+
+    document.getElementById('main-content').innerHTML = `
+      <div class="section-header">
+        <div class="section-title">Vault <span style="color:var(--text3);font-weight:400;font-size:.85rem">(${entries.length})</span></div>
+        <div class="section-spacer"></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select class="field" style="margin:0;padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.82rem" onchange="UI.setSortBy(this.value)">
+            <option value="name" ${VaultState.getSettings().sortBy==='name'?'selected':''}>A–Z</option>
+            <option value="updated" ${VaultState.getSettings().sortBy==='updated'?'selected':''}>Recientes</option>
+            <option value="created" ${VaultState.getSettings().sortBy==='created'?'selected':''}>Más nuevos</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="UI.newEntry()">+ Nuevo</button>
+        </div>
+      </div>
+      <div class="searchbar">
+        <span class="search-icon">🔍</span>
+        <input type="search" placeholder="Buscar por nombre, URL, usuario, tags..." value="${esc(searchQuery)}" oninput="UI.setSearch(this.value)">
+      </div>
+      ${allTags.length ? `<div class="tags-row" style="margin-bottom:12px">
+        <span class="tag" style="cursor:pointer;${!filterTag?'border-color:var(--accent);color:var(--accent)':''}" onclick="UI.setFilterTag(null)">Todos</span>
+        ${allTags.map(t => `<span class="tag" style="cursor:pointer;${filterTag===t?'border-color:var(--accent);color:var(--accent)':''}" onclick="UI.setFilterTag('${esc(t)}')">${esc(t)}</span>`).join('')}
+      </div>` : ''}
+      ${filtered.length === 0 ? `<div class="empty"><div class="empty-icon">🔍</div><p>${entries.length === 0 ? 'Tu vault está vacío. Crea tu primera entrada.' : 'No se encontraron resultados.'}</p></div>` : ''}
+      <div class="card-list">
+        ${filtered.map(e => `
+          <div class="entry-card ${e.pinned?'pinned':''}" onclick="UI.viewEntry('${esc(e.id)}')">
+            <div class="entry-icon">${getIcon(e.nombreServicio)}</div>
+            <div class="entry-info">
+              <div class="entry-name">${esc(e.nombreServicio || 'Sin nombre')} ${e.pinned?'📌':''}</div>
+              <div class="entry-meta">${esc(e.usuario || e.url || '')}</div>
+              ${(e.tags||[]).length ? `<div class="tags-row" style="margin-top:4px">${e.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
+            </div>
+            <div class="entry-actions">
+              ${e.usuario ? `<button class="btn-icon" title="Copiar usuario" onclick="event.stopPropagation();copyToClipboard('${esc(e.usuario)}','Usuario copiado')">👤</button>` : ''}
+              <button class="btn-icon" title="Copiar contraseña" onclick="event.stopPropagation();UI.copyPw('${esc(e.id)}')">🔑</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function setSearch(v) { searchQuery = v; renderList(); }
+  function setFilterTag(t) { filterTag = t; renderList(); }
+  function setSortBy(v) { VaultState.setSettings({ sortBy: v }); VaultState.save().catch(()=>{}); renderList(); }
+
+  function copyPw(id) {
+    const e = VaultState.getEntries().find(x => x.id === id);
+    if (e) copyToClipboard(e.contraseña || e.password || '', 'Contraseña copiada');
+  }
+
+  // ---- DETAIL / EDIT / CREATE ----
+  function viewEntry(id) {
+    currentEntryId = id;
+    detailMode = 'view';
+    renderTab('detail');
+  }
+
+  function newEntry() {
+    currentEntryId = null;
+    detailMode = 'create';
+    renderTab('detail');
+  }
+
+  let showPw = false;
+  let otpInterval = null;
+
+  function renderDetail() {
+    clearInterval(otpInterval);
+    const isCreate = detailMode === 'create';
+    const isEdit = detailMode === 'edit';
+    const isView = detailMode === 'view';
+    const entry = isCreate ? {} : (VaultState.getEntries().find(e => e.id === currentEntryId) || {});
+    const pw = entry.contraseña || entry.password || '';
+    const str = pw ? Crypto.estimateStrength(pw) : null;
+
+    if (isView) {
+      let otpHtml = '';
+      if (entry.otpSecret) {
+        otpHtml = `
+          <div class="detail-field">
+            <div class="detail-label">OTP / 2FA</div>
+            <div class="detail-value" style="flex-direction:column;align-items:flex-start;gap:4px">
+              <div id="otp-code-display" class="otp-code">------</div>
+              <div class="otp-progress"><div class="otp-bar" id="otp-bar" style="width:100%"></div></div>
+              <button class="btn btn-sm btn-ghost" onclick="UI.copyOTP('${esc(entry.id)}')">📋 Copiar OTP</button>
+            </div>
+          </div>`;
+      }
+
+      document.getElementById('main-content').innerHTML = `
+        <div class="section-header">
+          <button class="btn btn-ghost btn-sm" onclick="UI.backToList()">← Volver</button>
+          <div class="section-spacer"></div>
+          <button class="btn btn-sm btn-secondary" onclick="UI.editEntry('${esc(entry.id)}')">✏️ Editar</button>
+          <button class="btn btn-sm btn-danger" onclick="UI.deleteEntry('${esc(entry.id)}')">🗑</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:24px">
+          <div class="entry-icon" style="width:56px;height:56px;font-size:1.8rem">${getIcon(entry.nombreServicio)}</div>
+          <div>
+            <div style="font-size:1.3rem;font-weight:700">${esc(entry.nombreServicio||'Sin nombre')}</div>
+            <div style="font-size:.8rem;color:var(--text3)">${ago(entry.updatedAt)}</div>
+          </div>
+          <div style="margin-left:auto">
+            <button class="btn-icon ${entry.pinned?'active':''}" title="Favorito" onclick="UI.togglePin('${esc(entry.id)}')" style="font-size:1.2rem;${entry.pinned?'color:var(--yellow)':''}">📌</button>
+          </div>
+        </div>
+        ${entry.url ? `<div class="detail-field"><div class="detail-label">URL</div><div class="detail-value"><span><a href="${esc(entry.url)}" target="_blank" rel="noopener">${esc(entry.url)}</a></span><button class="btn-icon" onclick="copyToClipboard('${esc(entry.url)}','URL copiada')">📋</button></div></div>` : ''}
+        ${entry.usuario ? `<div class="detail-field"><div class="detail-label">Usuario</div><div class="detail-value"><span>${esc(entry.usuario)}</span><button class="btn-icon" onclick="copyToClipboard('${esc(entry.usuario)}','Usuario copiado')">📋</button></div></div>` : ''}
+        <div class="detail-field">
+          <div class="detail-label">Contraseña ${str ? `<span style="color:${str.color};font-style:normal;margin-left:8px">${str.label}</span>` : ''}</div>
+          <div class="detail-value">
+            <span id="pw-display" class="pw-hidden" style="font-family:var(--font)">${showPw ? esc(pw) : '•'.repeat(Math.min(pw.length || 8, 16))}</span>
+            <button class="btn-icon" onclick="UI.toggleShowPw('${esc(pw)}')">${showPw ? '🙈' : '👁'}</button>
+            <button class="btn-icon" onclick="UI.copyPw('${esc(entry.id)}')">📋</button>
+          </div>
+        </div>
+        ${entry.notas ? `<div class="detail-field"><div class="detail-label">Notas</div><div class="detail-value" style="display:block;white-space:pre-wrap;word-break:break-word">${esc(entry.notas)}</div></div>` : ''}
+        ${(entry.tags||[]).length ? `<div class="detail-field"><div class="detail-label">Tags</div><div class="tags-row">${entry.tags.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</div></div>` : ''}
+        ${otpHtml}
+        <div style="font-size:.75rem;color:var(--text3);margin-top:16px">Creado: ${ago(entry.createdAt)} · Actualizado: ${ago(entry.updatedAt)}</div>
+      `;
+
+      if (entry.otpSecret) {
+        refreshOTP(entry.otpSecret);
+        otpInterval = setInterval(() => refreshOTP(entry.otpSecret), 1000);
+      }
+    } else {
+      // Edit/Create form
+      const tags = entry.tags || [];
+      document.getElementById('main-content').innerHTML = `
+        <div class="section-header">
+          <button class="btn btn-ghost btn-sm" onclick="UI.backToList()">← Volver</button>
+          <div class="section-title">${isCreate ? 'Nueva entrada' : 'Editar entrada'}</div>
+        </div>
+        <div id="detail-error"></div>
+        <div class="field">
+          <label>Nombre del servicio</label>
+          <input type="text" id="d-name" value="${esc(entry.nombreServicio||'')}" placeholder="ej: Gmail, Banco Galicia...">
+        </div>
+        <div class="field">
+          <label>URL</label>
+          <input type="url" id="d-url" value="${esc(entry.url||'')}" placeholder="https://..." oninput="UI.inferName(this.value)">
+        </div>
+        <div class="field">
+          <label>Usuario / Email</label>
+          <input type="text" id="d-user" value="${esc(entry.usuario||'')}" placeholder="usuario@ejemplo.com" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Contraseña</label>
+          <div class="input-wrap">
+            <input type="password" id="d-pw" value="${esc(pw)}" placeholder="Contraseña" autocomplete="off">
+            <button type="button" onclick="UI.togglePw('d-pw', this)">👁</button>
+          </div>
+          <div class="strength-bar"><div class="strength-fill" id="d-pw-strength" style="width:0%"></div></div>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <span id="d-pw-label" style="font-size:.75rem;color:var(--text3);flex:1"></span>
+            <button class="btn btn-sm btn-ghost" onclick="UI.generateAndFill()">🎲 Generar</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Notas</label>
+          <textarea id="d-notes" placeholder="Notas adicionales...">${esc(entry.notas||'')}</textarea>
+        </div>
+        <div class="field">
+          <label>Tags (Enter para agregar)</label>
+          <div class="chip-input-wrap" id="tags-wrap">
+            ${tags.map(t => `<span class="chip" data-tag="${esc(t)}">${esc(t)}<button onclick="UI.removeTag('${esc(t)}')">×</button></span>`).join('')}
+            <input type="text" id="tag-input" placeholder="tag..." onkeydown="UI.handleTagInput(event)">
+          </div>
+        </div>
+        <div class="field">
+          <label>OTP Secret (opcional, solo almacenado)</label>
+          <input type="text" id="d-otp" value="${esc(entry.otpSecret||'')}" placeholder="Base32 secret..." autocomplete="off">
+        </div>
+        <div class="btn-row" style="margin-top:8px">
+          <button class="btn btn-secondary" onclick="UI.backToList()">Cancelar</button>
+          <button class="btn btn-primary" onclick="UI.saveDetail()">${isCreate ? 'Crear' : 'Guardar'}</button>
+        </div>
+      `;
+
+      document.getElementById('d-pw').addEventListener('input', e => {
+        const str = Crypto.estimateStrength(e.target.value);
+        const pct = (str.level + 1) / 5 * 100;
+        document.getElementById('d-pw-strength').style.cssText = `width:${pct}%; background:${str.color}`;
+        document.getElementById('d-pw-label').textContent = e.target.value.length ? str.label : '';
+      });
+    }
+  }
+
+  async function refreshOTP(secret) {
+    const code = await TOTP.generate(secret);
+    const el = document.getElementById('otp-code-display');
+    if (el) el.textContent = code;
+    const bar = document.getElementById('otp-bar');
+    if (bar) bar.style.width = (TOTP.timeRemaining() / 30 * 100) + '%';
+  }
+
+  async function copyOTP(id) {
+    const entry = VaultState.getEntries().find(e => e.id === id);
+    if (!entry?.otpSecret) return;
+    const code = await TOTP.generate(entry.otpSecret);
+    copyToClipboard(code, 'OTP copiado');
+  }
+
+  function toggleShowPw(pw) {
+    showPw = !showPw;
+    renderDetail();
+    if (showPw) {
+      setTimeout(() => {
+        showPw = false;
+        const d = document.getElementById('pw-display');
+        if (d) {
+          d.textContent = '•'.repeat(Math.min(pw.length || 8, 16));
+          const btn = d.parentElement.querySelectorAll('button')[0];
+          if (btn) btn.textContent = '👁';
+        }
+      }, 10000);
+    }
+  }
+
+  function inferName(url) {
+    if (!url) return;
+    const name = Parser.urlToName(url);
+    if (name) {
+      const el = document.getElementById('d-name');
+      if (el && !el.value) el.value = name;
+    }
+  }
+
+  function handleTagInput(e) {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const val = e.target.value.trim().replace(/,/g,'');
+      if (val) addTagChip(val);
+      e.target.value = '';
+    }
+  }
+
+  function addTagChip(tag) {
+    const wrap = document.getElementById('tags-wrap');
+    const existing = wrap.querySelectorAll('.chip');
+    const existingTags = Array.from(existing).map(c => c.dataset.tag);
+    if (existingTags.includes(tag)) return;
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.dataset.tag = tag;
+    chip.innerHTML = `${esc(tag)}<button onclick="UI.removeTag('${esc(tag)}')">×</button>`;
+    wrap.insertBefore(chip, document.getElementById('tag-input'));
+  }
+
+  function removeTag(tag) {
+    const wrap = document.getElementById('tags-wrap');
+    wrap.querySelectorAll('.chip').forEach(c => { if (c.dataset.tag === tag) c.remove(); });
+  }
+
+  function getTags() {
+    const wrap = document.getElementById('tags-wrap');
+    if (!wrap) return [];
+    return Array.from(wrap.querySelectorAll('.chip')).map(c => c.dataset.tag);
+  }
+
+  async function saveDetail() {
+    const name = document.getElementById('d-name').value.trim();
+    const url = document.getElementById('d-url').value.trim();
+    const user = document.getElementById('d-user').value.trim();
+    const pw = document.getElementById('d-pw').value;
+    const notes = document.getElementById('d-notes').value.trim();
+    const tags = getTags();
+    const otp = document.getElementById('d-otp').value.trim();
+    const errEl = document.getElementById('detail-error');
+
+    if (!pw) { errEl.innerHTML = '<div class="alert alert-error">La contraseña es obligatoria.</div>'; return; }
+    if (!name && !url) { errEl.innerHTML = '<div class="alert alert-error">Ingresá al menos un nombre o URL.</div>'; return; }
+
+    const now = new Date().toISOString();
+    if (detailMode === 'create') {
+      const entry = { id: uuid(), nombreServicio: name || Parser.urlToName(url) || 'Sin nombre', url, usuario: user, contraseña: pw, notas: notes, tags, otpSecret: otp || null, createdAt: now, updatedAt: now, pinned: false };
+      VaultState.addEntry(entry);
+    } else {
+      const existing = VaultState.getEntries().find(e => e.id === currentEntryId);
+      const updated = { ...existing, nombreServicio: name, url, usuario: user, contraseña: pw, notas: notes, tags, otpSecret: otp || null, updatedAt: now };
+      VaultState.updateEntry(updated);
+    }
+    try {
+      await VaultState.save();
+      showToast('✅ Guardado');
+      backToList();
+    } catch (e) {
+      errEl.innerHTML = `<div class="alert alert-error">Error al guardar: ${esc(e.message)}</div>`;
+    }
+  }
+
+  async function deleteEntry(id) {
+    if (!confirm('¿Eliminar esta entrada? Esta acción no se puede deshacer.')) return;
+    VaultState.deleteEntry(id);
+    await VaultState.save();
+    showToast('🗑 Eliminado');
+    backToList();
+  }
+
+  async function togglePin(id) {
+    const entry = VaultState.getEntries().find(e => e.id === id);
+    if (!entry) return;
+    VaultState.updateEntry({ ...entry, pinned: !entry.pinned, updatedAt: new Date().toISOString() });
+    await VaultState.save();
+    renderDetail();
+  }
+
+  function editEntry(id) {
+    currentEntryId = id;
+    detailMode = 'edit';
+    renderDetail();
+  }
+
+  function generateAndFill() {
+    const pw = Generator.generate({ length: 20, upper: true, lower: true, numbers: true, symbols: true });
+    document.getElementById('d-pw').value = pw;
+    document.getElementById('d-pw').type = 'text';
+    const str = Crypto.estimateStrength(pw);
+    const pct = (str.level + 1) / 5 * 100;
+    document.getElementById('d-pw-strength').style.cssText = `width:${pct}%; background:${str.color}`;
+    document.getElementById('d-pw-label').textContent = str.label;
+    setTimeout(() => { const el = document.getElementById('d-pw'); if (el) el.type = 'password'; }, 3000);
+  }
+
+  function backToList() {
+    clearInterval(otpInterval);
+    searchQuery = '';
+    currentEntryId = null;
+    detailMode = 'view';
+    currentTab = 'list';
+    setActiveNav('list');
+    renderList();
+  }
+
+  // ---- GENERATOR ----
+  let genOpts = { length: 20, upper: true, lower: true, numbers: true, symbols: true, noAmbiguous: false, passphrase: false, wordCount: 4 };
+  let generatedPw = '';
+
+  function renderGenerator() {
+    generatedPw = generatedPw || Generator.generate(genOpts);
+    const str = Crypto.estimateStrength(generatedPw);
+    const pct = (str.level + 1) / 5 * 100;
+
+    document.getElementById('main-content').innerHTML = `
+      <div class="section-header">
+        <div class="section-title">🎲 Generador de Contraseñas</div>
+      </div>
+      <div class="gen-output">
+        <span id="gen-pw-output">${esc(generatedPw)}</span>
+        <button class="btn-icon" onclick="UI.regenPw()" title="Regenerar">🔄</button>
+        <button class="btn-icon" onclick="copyToClipboard(document.getElementById('gen-pw-output').textContent,'Contraseña copiada')" title="Copiar">📋</button>
+      </div>
+      <div class="strength-bar" style="margin-bottom:6px"><div class="strength-fill" id="gen-str-bar" style="width:${pct}%;background:${str.color}"></div></div>
+      <div style="font-size:.8rem;color:${str.color};margin-bottom:16px">${str.label}</div>
+      
+      <div class="settings-section">
+        <div class="settings-section-title">Opciones</div>
+        <div class="field">
+          <label>Longitud: <strong id="gen-len-label">${genOpts.length}</strong></label>
+          <input type="range" min="8" max="128" value="${genOpts.length}" oninput="UI.setGenOpt('length',+this.value);document.getElementById('gen-len-label').textContent=this.value">
+        </div>
+        <div class="gen-options">
+          ${[['upper','Mayúsculas (A-Z)'],['lower','Minúsculas (a-z)'],['numbers','Números (0-9)'],['symbols','Símbolos (!@#...)'],['noAmbiguous','Sin ambiguos (0,O,l,1)'],['passphrase','Frase de paso']].map(([k,l])=>`
+            <div class="toggle-row">
+              <label>${l}</label>
+              <input type="checkbox" ${genOpts[k]?'checked':''} onchange="UI.setGenOpt('${k}',this.checked)">
+            </div>
+          `).join('')}
+        </div>
+        ${genOpts.passphrase ? `<div class="field" style="margin-top:12px"><label>Palabras: <strong>${genOpts.wordCount}</strong></label><input type="range" min="3" max="8" value="${genOpts.wordCount}" oninput="UI.setGenOpt('wordCount',+this.value);UI.regenPw()"></div>` : ''}
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-title">Parser de requisitos</div>
+        <div class="field">
+          <input type="text" id="gen-req" placeholder='Pega requisitos, ej: "min 12 caracteres, 1 mayúscula, símbolo"' oninput="UI.parseReqs(this.value)">
+        </div>
+      </div>
+    `;
+  }
+
+  function setGenOpt(k, v) { genOpts[k] = v; regenPw(); }
+  function regenPw() {
+    generatedPw = Generator.generate(genOpts);
+    const el = document.getElementById('gen-pw-output');
+    if (el) el.textContent = generatedPw;
+    const str = Crypto.estimateStrength(generatedPw);
+    const pct = (str.level + 1) / 5 * 100;
+    const bar = document.getElementById('gen-str-bar');
+    if (bar) { bar.style.width = pct + '%'; bar.style.background = str.color; }
+    const lbl = document.querySelector('#main-content .strength-bar + div');
+    if (lbl) { lbl.textContent = str.label; lbl.style.color = str.color; }
+    const lenL = document.getElementById('gen-len-label');
+    if (lenL) lenL.textContent = genOpts.length;
+  }
+
+  function parseReqs(text) {
+    const opts = Generator.parseRequirements(text);
+    genOpts = { ...genOpts, ...opts };
+    renderGenerator();
+  }
+
+  // ---- HEALTH ----
+  function renderHealth() {
+    const entries = VaultState.getEntries();
+    const pwMap = {};
+    entries.forEach(e => {
+      const pw = e.contraseña || e.password || '';
+      if (pw) { pwMap[pw] = (pwMap[pw] || []); pwMap[pw].push(e.id); }
+    });
+    const reused = entries.filter(e => { const pw = e.contraseña||e.password||''; return pw && pwMap[pw].length > 1; });
+    const weak = entries.filter(e => { const pw = e.contraseña||e.password||''; return pw && Crypto.estimateStrength(pw).level < 2; });
+    const short = entries.filter(e => { const pw = e.contraseña||e.password||''; return pw && pw.length < 10; });
+    const ninetyDays = Date.now() - 90 * 24 * 3600000;
+    const old = entries.filter(e => e.updatedAt && new Date(e.updatedAt).getTime() < ninetyDays);
+
+    const issueEntries = [...new Set([...reused, ...weak, ...short].map(e => e.id))].map(id => entries.find(e => e.id === id));
+
+    document.getElementById('main-content').innerHTML = `
+      <div class="section-header"><div class="section-title">❤️ Salud del Vault</div></div>
+      <div class="health-stats">
+        <div class="health-stat ${weak.length?'danger':'ok'}">
+          <div class="health-stat-num">${weak.length}</div>
+          <div class="health-stat-label">Débiles</div>
+        </div>
+        <div class="health-stat ${reused.length?'danger':'ok'}">
+          <div class="health-stat-num">${reused.length}</div>
+          <div class="health-stat-label">Repetidas</div>
+        </div>
+        <div class="health-stat ${short.length?'warn':'ok'}">
+          <div class="health-stat-num">${short.length}</div>
+          <div class="health-stat-label">Cortas (&lt;10)</div>
+        </div>
+        <div class="health-stat ${old.length>5?'warn':'ok'}">
+          <div class="health-stat-num">${old.length}</div>
+          <div class="health-stat-label">Sin cambiar &gt;90d</div>
+        </div>
+        <div class="health-stat ok">
+          <div class="health-stat-num">${entries.length}</div>
+          <div class="health-stat-label">Total entradas</div>
+        </div>
+      </div>
+      ${issueEntries.length ? `
+        <div class="section-header"><div class="section-title">Entradas con problemas</div></div>
+        <div class="card-list">
+          ${issueEntries.map(e => {
+            const pw = e.contraseña||e.password||'';
+            const issues = [];
+            if (pwMap[pw]?.length > 1) issues.push('🔄 Repetida');
+            if (Crypto.estimateStrength(pw).level < 2) issues.push('⚠️ Débil');
+            if (pw.length < 10) issues.push('📏 Corta');
+            return `<div class="entry-card" onclick="UI.viewEntry('${esc(e.id)}')">
+              <div class="entry-icon">${getIcon(e.nombreServicio)}</div>
+              <div class="entry-info">
+                <div class="entry-name">${esc(e.nombreServicio||'Sin nombre')}</div>
+                <div class="entry-meta">${issues.join(' · ')}</div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      ` : '<div class="alert alert-success">✅ ¡Todo en orden!</div>'}
+    `;
+  }
+
+  // ---- IMPORT ----
+  let importPreview = [];
+
+  function renderImport() {
+    document.getElementById('main-content').innerHTML = `
+      <div class="section-header"><div class="section-title">📥 Importar</div></div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Importar Vault Cifrado (.json)</div>
+        <div class="import-area" id="drop-zone" onclick="document.getElementById('import-file').click()" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="UI.handleFileDrop(event)">
+          <div style="font-size:2rem">📂</div>
+          <div style="color:var(--text2);margin-top:8px">Clic o arrastrá tu archivo .vault.json</div>
+          <input type="file" id="import-file" accept=".json,.vault" style="display:none" onchange="UI.handleFileSelect(event)">
+        </div>
+        <div id="import-vault-status"></div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Importar desde Texto (WhatsApp, etc.)</div>
+        <div class="field">
+          <label>Pegar texto con credenciales</label>
+          <textarea id="import-text" rows="8" placeholder="Pega tu texto aquí. Formatos soportados:\n- URL | usuario | contraseña\n- user: xxx, pass: xxx\n- cualquier texto estructurado con credenciales"></textarea>
+        </div>
+        <button class="btn btn-secondary" onclick="UI.parseImportText()">🔍 Analizar texto</button>
+      </div>
+
+      <div id="import-preview-area" style="display:none">
+        <div class="section-header" style="margin-top:16px">
+          <div class="section-title">Vista previa</div>
+          <div class="section-spacer"></div>
+          <span id="preview-count" style="color:var(--text2);font-size:.85rem"></span>
+        </div>
+        <div class="preview-container">
+          <table class="preview-table" id="preview-table">
+            <thead><tr><th>✓</th><th>Nombre</th><th>URL</th><th>Usuario</th><th>Contraseña</th></tr></thead>
+            <tbody id="preview-body"></tbody>
+          </table>
+        </div>
+        <div class="alert alert-warn" style="margin-bottom:12px">Revisá los datos antes de importar. Las contraseñas se cifrarán inmediatamente.</div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="UI.confirmImport()">✅ Importar seleccionados</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function parseImportText() {
+    const text = document.getElementById('import-text').value;
+    importPreview = Parser.parseTextBlock(text);
+    if (importPreview.length === 0) {
+      showToast('⚠️ No se detectaron credenciales');
+      return;
+    }
+    showImportPreview();
+  }
+
+  function showImportPreview() {
+    document.getElementById('import-preview-area').style.display = '';
+    document.getElementById('preview-count').textContent = `${importPreview.length} entradas detectadas`;
+    const tbody = document.getElementById('preview-body');
+    tbody.innerHTML = importPreview.map((e, i) => `
+      <tr>
+        <td><input type="checkbox" checked data-idx="${i}"></td>
+        <td><input type="text" value="${esc(e.name||e.url||'')}" data-field="name" data-idx="${i}" style="background:none;border:none;color:var(--text);width:100%;min-width:80px" onchange="importPreview[${i}].name=this.value"></td>
+        <td><input type="text" value="${esc(e.url||'')}" data-field="url" data-idx="${i}" style="background:none;border:none;color:var(--text);width:100%;min-width:100px" onchange="importPreview[${i}].url=this.value"></td>
+        <td><input type="text" value="${esc(e.user||'')}" data-field="user" data-idx="${i}" style="background:none;border:none;color:var(--text);width:100%;min-width:100px" onchange="importPreview[${i}].user=this.value"></td>
+        <td><input type="password" value="${esc(e.password)}" data-field="password" data-idx="${i}" style="background:none;border:none;color:var(--text);width:100%;min-width:80px;font-family:var(--font)" onchange="importPreview[${i}].password=this.value"></td>
+      </tr>
+    `).join('');
+  }
+
+  async function confirmImport() {
+    const checks = document.querySelectorAll('#preview-body input[type=checkbox]');
+    const selected = Array.from(checks).filter(c => c.checked).map(c => importPreview[+c.dataset.idx]);
+    if (!selected.length) { showToast('⚠️ Nada seleccionado'); return; }
+    const now = new Date().toISOString();
+    selected.forEach(e => {
+      if (!e.password) return;
+      VaultState.addEntry({ id: uuid(), nombreServicio: e.name || Parser.urlToName(e.url) || 'Importado', url: e.url||'', usuario: e.user||'', contraseña: e.password, notas: '', tags: ['importado'], otpSecret: null, createdAt: now, updatedAt: now, pinned: false });
+    });
+    await VaultState.save();
+    showToast(`✅ ${selected.length} entradas importadas`);
+    importPreview = [];
+    renderList();
+    setActiveNav('list');
+    currentTab = 'list';
+  }
+
+  async function handleFileDrop(e) {
+    e.preventDefault();
+    document.getElementById('drop-zone').classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) await processImportFile(file);
+  }
+
+  async function handleFileSelect(e) {
+    const file = e.target.files[0];
+    if (file) await processImportFile(file);
+  }
+
+  async function processImportFile(file) {
+    const statusEl = document.getElementById('import-vault-status');
+    statusEl.innerHTML = '<div class="alert alert-warn">Leyendo archivo...</div>';
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data.salt || !data.ciphertext || !data.iv) throw new Error('Formato de vault inválido');
+      
+      showModal(`
+        <div class="modal">
+          <div class="modal-title">🔐 Importar Vault Cifrado</div>
+          <div class="modal-sub">Ingresá la Máster Key del archivo exportado para descifrar e importar sus entradas.</div>
+          <div id="import-key-error"></div>
+          <div class="field">
+            <label>Máster Key del archivo</label>
+            <div class="input-wrap">
+              <input type="password" id="import-key-input" placeholder="Clave del vault exportado">
+              <button type="button" onclick="UI.togglePw('import-key-input', this)">👁</button>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-secondary" onclick="UI.closeModal()">Cancelar</button>
+            <button class="btn btn-primary" onclick="UI.doImportVault(${JSON.stringify(JSON.stringify(data)).slice(1,-1)})">Importar</button>
+          </div>
+        </div>
+      `);
+      
+      window._importData = data;
+      document.getElementById('import-key-input').addEventListener('keydown', e => { if (e.key === 'Enter') doImportVault(); });
+      statusEl.innerHTML = '';
+    } catch (e) {
+      statusEl.innerHTML = `<div class="alert alert-error">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  async function doImportVault() {
+    const key = document.getElementById('import-key-input').value;
+    const errEl = document.getElementById('import-key-error');
+    if (!key) return;
+    errEl.innerHTML = '<div class="alert alert-warn">Descifrando...</div>';
+    try {
+      const data = await Crypto.decrypt(window._importData, key);
+      const imported = data.entries || [];
+      const now = new Date().toISOString();
+      imported.forEach(e => {
+        const existing = VaultState.getEntries().find(x => x.id === e.id);
+        if (!existing) VaultState.addEntry({ ...e, importedAt: now });
+      });
+      await VaultState.save();
+      closeModal();
+      delete window._importData;
+      showToast(`✅ ${imported.length} entradas importadas del vault`);
+      renderList();
+    } catch {
+      errEl.innerHTML = '<div class="alert alert-error">Clave incorrecta o archivo inválido.</div>';
+    }
+  }
+
+  // ---- EXPORT ----
+  function renderExport() {
+    document.getElementById('main-content').innerHTML = `
+      <div class="section-header"><div class="section-title">📤 Exportar</div></div>
+      
+      <div class="settings-section">
+        <div class="settings-section-title">Exportar Vault Cifrado (recomendado)</div>
+        <p style="color:var(--text2);font-size:.88rem;margin-bottom:16px">Exporta el vault completo cifrado. Para importarlo necesitás tu Máster Key actual.</p>
+        <button class="btn btn-primary" onclick="UI.exportEncrypted()">📥 Descargar vault.json cifrado</button>
+      </div>
+
+      <div class="settings-section" style="border-color:rgba(239,68,68,.3)">
+        <div class="settings-section-title" style="color:var(--red)">⚠️ Exportar en texto claro (peligroso)</div>
+        <p style="color:var(--text2);font-size:.88rem;margin-bottom:16px">Esto exporta TODAS tus contraseñas en texto plano. Solo usar para migración, nunca para backup.</p>
+        <div class="toggle-row" style="margin-bottom:12px">
+          <label>Entiendo el riesgo</label>
+          <input type="checkbox" id="plain-confirm">
+        </div>
+        <div class="toggle-row" style="margin-bottom:16px">
+          <label>Acepto que este archivo no es seguro</label>
+          <input type="checkbox" id="plain-confirm2">
+        </div>
+        <button class="btn btn-danger" onclick="UI.exportPlaintext()">Exportar en claro (solo si estoy seguro)</button>
+      </div>
+    `;
+  }
+
+  async function exportEncrypted() {
+    try {
+      const payload = await Storage.getVault();
+      if (!payload) { showToast('⚠️ No hay vault guardado'); return; }
+      const blob = new Blob([JSON.stringify({ ...payload, exportedAt: new Date().toISOString() })], { type: 'application/json' });
+      downloadBlob(blob, `vault-backup-${new Date().toISOString().slice(0,10)}.vault.json`);
+      showToast('✅ Vault exportado');
+    } catch (e) {
+      showToast('❌ Error al exportar: ' + e.message);
+    }
+  }
+
+  function exportPlaintext() {
+    if (!document.getElementById('plain-confirm').checked || !document.getElementById('plain-confirm2').checked) {
+      showToast('⚠️ Debés confirmar ambas opciones');
+      return;
+    }
+    if (!confirm('⛔ ÚLTIMA ADVERTENCIA: Estás a punto de exportar TODAS tus contraseñas en TEXTO PLANO. ¿Continuar?')) return;
+    const entries = VaultState.getEntries();
+    const csv = ['Nombre,URL,Usuario,Contraseña,Notas,Tags,Creado,Actualizado',
+      ...entries.map(e => [e.nombreServicio,e.url,e.usuario,e.contraseña||e.password,e.notas,(e.tags||[]).join(';'),e.createdAt,e.updatedAt].map(v=>'"'+(v||'').replace(/"/g,'""')+'"').join(','))
+    ].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    downloadBlob(blob, `vault-PLAIN-${new Date().toISOString().slice(0,10)}.csv`);
+    showToast('⚠️ Exportado en claro. ¡Borrá el archivo cuando termines!');
+  }
+
+  function downloadBlob(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // ---- SETTINGS ----
+  function renderSettings() {
+    const s = VaultState.getSettings();
+    document.getElementById('main-content').innerHTML = `
+      <div class="section-header"><div class="section-title">⚙️ Configuración</div></div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Seguridad</div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Auto-bloqueo</div><div class="settings-row-sub">Tiempo de inactividad antes de bloquear</div></div>
+          <select style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px" onchange="UI.updateSetting('autoLockMinutes',+this.value)">
+            ${[1,2,5,10,15,30,60,0].map(v=>`<option value="${v}" ${s.autoLockMinutes===v?'selected':''}>${v===0?'Nunca':v+' min'}</option>`).join('')}
+          </select>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Limpiar portapapeles</div><div class="settings-row-sub">Segundos tras copiar una contraseña</div></div>
+          <select style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px" onchange="UI.updateSetting('clipboardSeconds',+this.value)">
+            ${[10,20,30,45,60,0].map(v=>`<option value="${v}" ${s.clipboardSeconds===v?'selected':''}>${v===0?'Nunca':v+'s'}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <div class="settings-section" id="change-key-section">
+        <div class="settings-section-title">Cambiar Máster Key</div>
+        <p style="color:var(--text2);font-size:.85rem;margin-bottom:16px">Si olvidás la nueva Máster Key, no hay recuperación posible.</p>
+        <div id="change-key-error"></div>
+        <div class="field">
+          <label>Máster Key actual</label>
+          <div class="input-wrap">
+            <input type="password" id="ck-current" placeholder="Tu clave actual">
+            <button type="button" onclick="UI.togglePw('ck-current',this)">👁</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Nueva Máster Key</label>
+          <div class="input-wrap">
+            <input type="password" id="ck-new" placeholder="Mínimo 10 caracteres">
+            <button type="button" onclick="UI.togglePw('ck-new',this)">👁</button>
+          </div>
+          <div class="strength-bar"><div class="strength-fill" id="ck-strength-bar" style="width:0%"></div></div>
+        </div>
+        <div class="field">
+          <label>Confirmar nueva Máster Key</label>
+          <div class="input-wrap">
+            <input type="password" id="ck-new2" placeholder="Repite la nueva clave">
+            <button type="button" onclick="UI.togglePw('ck-new2',this)">👁</button>
+          </div>
+        </div>
+        <button class="btn btn-danger" onclick="UI.changeMasterKey()">🔑 Cambiar Máster Key</button>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title" style="color:var(--red)">Zona de peligro</div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Borrar todo el vault</div><div class="settings-row-sub">Elimina todos los datos. Irreversible.</div></div>
+          <button class="btn btn-danger btn-sm" onclick="UI.showResetOption()">Borrar</button>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('ck-new').addEventListener('input', e => {
+      const str = Crypto.estimateStrength(e.target.value);
+      const pct = (str.level + 1) / 5 * 100;
+      document.getElementById('ck-strength-bar').style.cssText = `width:${pct}%;background:${str.color}`;
+    });
+  }
+
+  async function updateSetting(key, val) {
+    VaultState.setSettings({ [key]: val });
+    await VaultState.save().catch(() => {});
+    showToast('✅ Configuración guardada');
+  }
+
+  async function changeMasterKey() {
+    const current = document.getElementById('ck-current').value;
+    const newKey = document.getElementById('ck-new').value;
+    const newKey2 = document.getElementById('ck-new2').value;
+    const errEl = document.getElementById('change-key-error');
+
+    if (!current || !newKey || !newKey2) { errEl.innerHTML = '<div class="alert alert-error">Todos los campos son requeridos.</div>'; return; }
+    if (newKey.length < 10) { errEl.innerHTML = '<div class="alert alert-error">La nueva clave debe tener al menos 10 caracteres.</div>'; return; }
+    const str = Crypto.estimateStrength(newKey);
+    if (str.level < 2) { errEl.innerHTML = '<div class="alert alert-warn">La nueva clave es muy débil.</div>'; return; }
+    if (newKey !== newKey2) { errEl.innerHTML = '<div class="alert alert-error">Las nuevas claves no coinciden.</div>'; return; }
+    if (!confirm('⚠️ IMPORTANTE: Si olvidás la nueva Máster Key, no hay recuperación posible.\n\n¿Confirmar cambio de Máster Key?')) return;
+
+    errEl.innerHTML = '<div class="alert alert-warn">Verificando clave actual...</div>';
+    try {
+      const payload = await Storage.getVault();
+      const data = await Crypto.decrypt(payload, current);
+      errEl.innerHTML = '<div class="alert alert-warn">Re-cifrando vault con nueva clave...</div>';
+      // Re-encrypt with new key (new salt)
+      const newPayload = await Crypto.encrypt(data, newKey);
+      await Storage.setVault(newPayload);
+      // Update in-memory master key
+      VaultState.setUnlocked(newKey, data.entries || [], data.settings, data.customMappings);
+      errEl.innerHTML = '<div class="alert alert-success">✅ Máster Key actualizada exitosamente.</div>';
+      document.getElementById('ck-current').value = '';
+      document.getElementById('ck-new').value = '';
+      document.getElementById('ck-new2').value = '';
+    } catch (e) {
+      errEl.innerHTML = `<div class="alert alert-error">${e.message.includes('decrypt') || e.message.includes('operation') ? 'Clave actual incorrecta.' : esc(e.message)}</div>`;
+    }
+  }
+
+  // ---- DIAGNOSTICS ----
+  async function runDiagnostics() {
+    const log = document.getElementById('diag-log');
+    if (!log) return;
+    const write = (msg, cls='info') => {
+      log.innerHTML += `<div class="${cls}">[${new Date().toLocaleTimeString()}] ${esc(msg)}</div>`;
+      log.scrollTop = log.scrollHeight;
+    };
+    log.innerHTML = '';
+    write('=== Diagnóstico Vault ===');
+    
+    // Check storage
+    write('Analizando almacenamiento...');
+    try {
+      const results = await Storage.diagnoseStorage();
+      results.forEach(r => write(r.msg, r.ok ? 'ok' : 'err'));
+    } catch (e) { write('Error: ' + e.message, 'err'); }
+
+    // Check WebCrypto
+    write('Verificando WebCrypto...');
+    try {
+      const testKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+      write('AES-GCM disponible ✓', 'ok');
+      const testPBKDF2 = await crypto.subtle.importKey('raw', new TextEncoder().encode('test'), 'PBKDF2', false, ['deriveKey']);
+      write('PBKDF2 disponible ✓', 'ok');
+    } catch (e) { write('WebCrypto no disponible: ' + e.message, 'err'); }
+
+    // Check IndexedDB
+    write('Verificando IndexedDB...');
+    try {
+      const v = await Storage.getVault();
+      write(v ? `Vault en IndexedDB: ${v.ciphertext?.length ?? '?'} bytes cifrados` : 'Sin vault en IndexedDB', v ? 'ok' : 'info');
+    } catch (e) { write('Error IndexedDB: ' + e.message, 'err'); }
+
+    // Session state
+    write('Estado de sesión...');
+    write(`Vault bloqueado: ${VaultState.isLocked()}`, VaultState.isLocked() ? 'info' : 'ok');
+    if (!VaultState.isLocked()) {
+      write(`Entradas en memoria: ${VaultState.getEntries().length}`, 'ok');
+      write('Máster Key en memoria: [NUNCA MOSTRADA]', 'ok');
+    }
+
+    // Encryption test
+    write('Test de cifrado en memoria (no persiste)...');
+    try {
+      const testData = { test: 'hello', secret: 'world' };
+      const enc = await Crypto.encrypt(testData, 'test-key-12345');
+      const dec = await Crypto.decrypt(enc, 'test-key-12345');
+      if (dec.test === 'hello' && dec.secret === 'world') write('Encrypt/Decrypt: OK ✓', 'ok');
+      else write('Encrypt/Decrypt: MISMATCH', 'err');
+      // Wrong key
+      try { await Crypto.decrypt(enc, 'wrong-key'); write('Rechazo de clave incorrecta: OK ✓', 'ok'); }
+      catch { write('Rechazo de clave incorrecta: OK ✓', 'ok'); }
+    } catch (e) { write('Test cifrado falló: ' + e.message, 'err'); }
+
+    write('=== Diagnóstico completado ===');
+  }
+
+  function renderDiagnostics() {
+    document.getElementById('main-content').innerHTML = `
+      <div class="section-header"><div class="section-title">🔬 Diagnóstico</div></div>
+      <p style="color:var(--text2);font-size:.88rem;margin-bottom:16px">Panel de pruebas manuales. No contiene datos sensibles.</p>
+      <div class="diag-log" id="diag-log"><div class="info">Presioná "Ejecutar" para iniciar el diagnóstico.</div></div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-secondary" onclick="UI.runDiagnostics()">▶️ Ejecutar diagnóstico</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('diag-log').innerHTML=''">🗑 Limpiar</button>
+      </div>
+      <div class="settings-section" style="margin-top:20px">
+        <div class="settings-section-title">Información del sistema</div>
+        <div style="font-family:var(--font);font-size:.8rem;color:var(--text2);line-height:1.8">
+          <div>User Agent: ${esc(navigator.userAgent.slice(0,60))}...</div>
+          <div>WebCrypto: ${typeof crypto?.subtle !== 'undefined' ? '✅ Disponible' : '❌ No disponible'}</div>
+          <div>IndexedDB: ${typeof indexedDB !== 'undefined' ? '✅ Disponible' : '❌ No disponible'}</div>
+          <div>Clipboard API: ${typeof navigator?.clipboard !== 'undefined' ? '✅ Disponible' : '⚠️ No disponible'}</div>
+          <div>Timestamp: ${new Date().toISOString()}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ---- HELPERS ----
+  function togglePw(id, btn) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.type === 'password') { el.type = 'text'; if (btn) btn.textContent = '🙈'; }
+    else { el.type = 'password'; if (btn) btn.textContent = '👁'; }
+  }
+
+  return {
+    showSetupModal, handleSetup, showLockScreen, handleUnlock, showResetOption, showApp, lock,
+    renderTab, renderList, renderDetail, renderGenerator, renderHealth, renderImport, renderExport, renderSettings, renderDiagnostics,
+    setSearch, setFilterTag, setSortBy, copyPw, viewEntry, newEntry, editEntry, deleteEntry, togglePin, backToList,
+    inferName, handleTagInput, addTagChip, removeTag, saveDetail, generateAndFill, toggleShowPw,
+    setGenOpt, regenPw, parseReqs, refreshOTP, copyOTP,
+    parseImportText, confirmImport, handleFileDrop, handleFileSelect, processImportFile, doImportVault,
+    exportEncrypted, exportPlaintext,
+    updateSetting, changeMasterKey,
+    runDiagnostics,
+    togglePw, closeModal, showModal
+  };
+})();
+
+// ============================================================
+// BOOT
+// ============================================================
+(async () => {
+  try {
+    await Storage.init();
+    const vault = await Storage.getVault();
+    if (!vault) {
+      // First use
+      UI.showSetupModal();
+    } else {
+      // Return user: show lock screen
+      UI.showLockScreen();
+    }
+  } catch (e) {
+    document.body.innerHTML = `<div style="padding:40px;color:#ef4444;font-family:monospace">Error crítico al iniciar: ${e.message}<br><br>Tu navegador puede no soportar IndexedDB o WebCrypto. Intentá con Chrome, Firefox o Safari modernos.</div>`;
+  }
+})();
+</script>
+</body>
+</html>
