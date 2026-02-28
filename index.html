@@ -316,16 +316,20 @@ const Crypto = (() => {
   const SALT_BYTES = 16;
   const IV_BYTES = 12;
 
-  async function deriveKey(password, salt) {
+  async function deriveKeyWithIters(password, salt, iterations) {
     const enc = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
     return crypto.subtle.deriveKey(
-      { name: 'PBKDF2', salt, hash: 'SHA-256', iterations: PBKDF2_ITERS },
+      { name: 'PBKDF2', salt, hash: 'SHA-256', iterations },
       keyMaterial,
       { name: 'AES-GCM', length: 256 },
       false,
       ['encrypt', 'decrypt']
     );
+  }
+
+  async function deriveKey(password, salt) {
+    return deriveKeyWithIters(password, salt, PBKDF2_ITERS);
   }
 
   async function encrypt(data, password, existingSalt) {
@@ -347,7 +351,9 @@ const Crypto = (() => {
     const salt = new Uint8Array(payload.salt);
     const iv = new Uint8Array(payload.iv);
     const ciphertext = new Uint8Array(payload.ciphertext);
-    const key = await deriveKey(password, salt);
+    // IMPORTANT: use iterations FROM the payload, not the hardcoded constant
+    const iters = payload.iterations || PBKDF2_ITERS;
+    const key = await deriveKeyWithIters(password, salt, iters);
     const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
     return JSON.parse(new TextDecoder().decode(decrypted));
   }
@@ -2036,26 +2042,37 @@ Netflix: email@ejemplo.com, contraseña: Netflix2024"></textarea>
 
   function showImportModal() {
     const isTransfer = window._importIsTransfer;
+    const d = window._importData;
+    const info = !isTransfer ? `Archivo cifrado · ${d.iterations || 250000} iteraciones · exportado ${d.exportedAt ? new Date(d.exportedAt).toLocaleString('es') : 'fecha desconocida'}` : '';
     const container = document.getElementById('modal-container');
     container.innerHTML = `
       <div class="modal-overlay">
         <div class="modal">
           <div class="modal-title">📥 ${isTransfer ? 'Importar transferencia' : 'Importar Vault Cifrado'}</div>
-          <div class="modal-sub">${isTransfer
-            ? '⚡ Archivo de transferencia detectado. Ingresá la Máster Key <strong>de este dispositivo</strong> para cifrar e importar las entradas.'
-            : 'Ingresá la Máster Key <strong>del archivo exportado</strong> para descifrarlo e importar sus entradas.'
-          }</div>
+          <div class="modal-sub">
+            ${isTransfer
+              ? '⚡ Archivo de transferencia. Ingresá tu Máster Key <strong>de este dispositivo</strong> para cifrar e importar.'
+              : 'Ingresá la Máster Key <strong>con la que cifraste el vault en el otro dispositivo</strong>.'}
+            ${info ? `<br><span style="font-size:.75rem;color:var(--text3);font-family:var(--font)">${info}</span>` : ''}
+          </div>
           <div id="import-key-error"></div>
           <div class="field">
-            <label>${isTransfer ? 'Tu Máster Key (de este dispositivo)' : 'Máster Key del archivo exportado'}</label>
+            <label>${isTransfer ? 'Tu Máster Key (este dispositivo)' : 'Máster Key del vault exportado'}</label>
             <div class="input-wrap">
-              <input type="password" id="import-key-input" placeholder="Ingresá la clave..." autofocus>
-              <button type="button" onclick="UI.togglePw('import-key-input', this)">👁</button>
+              <input type="text" id="import-key-input" placeholder="Ingresá la clave..."
+                style="font-family:var(--font);letter-spacing:.05em"
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+              <button type="button" onclick="UI.toggleImportPwVis()">👁</button>
             </div>
+          </div>
+          <div style="font-size:.75rem;color:var(--text3);margin-bottom:14px">
+            💡 En celular: el campo muestra el texto para evitar errores de tipeo. Tocá 👁 para ocultarlo.
           </div>
           <div class="btn-row">
             <button class="btn btn-secondary" onclick="UI.closeModal()">Cancelar</button>
-            <button class="btn btn-primary" onclick="UI.doImportVault()">Importar</button>
+            <button class="btn btn-primary btn-block" onclick="UI.doImportVault()" style="margin-top:8px;padding:14px">
+              🔓 Descifrar e importar
+            </button>
           </div>
         </div>
       </div>
@@ -2066,7 +2083,13 @@ Netflix: email@ejemplo.com, contraseña: Netflix2024"></textarea>
         inp.focus();
         inp.addEventListener('keydown', e => { if (e.key === 'Enter') UI.doImportVault(); });
       }
-    }, 50);
+    }, 100);
+  }
+
+  function toggleImportPwVis() {
+    const inp = document.getElementById('import-key-input');
+    if (!inp) return;
+    inp.type = inp.type === 'password' ? 'text' : 'password';
   }
 
   async function doImportVault() {
@@ -2110,10 +2133,14 @@ Netflix: email@ejemplo.com, contraseña: Netflix2024"></textarea>
       renderList();
     } catch(e) {
       const msg = e.message || '';
-      if (/decrypt|integrity|tag/i.test(msg) || msg === '') {
-        errEl.innerHTML = '<div class="alert alert-error">Clave incorrecta. Verificá que estés ingresando la clave correcta.</div>';
+      console.error('Import error:', e);
+      if (/decrypt|integrity|tag|operation/i.test(msg) || msg === '') {
+        errEl.innerHTML = `<div class="alert alert-error">
+          ❌ <strong>Clave incorrecta</strong><br>
+          <span style="font-size:.8rem">Verificá que estés ingresando exactamente la misma Máster Key que usaste cuando creaste o desbloqueaste el vault en el otro dispositivo. Las mayúsculas y espacios importan.</span>
+        </div>`;
       } else {
-        errEl.innerHTML = `<div class="alert alert-error">Error: ${esc(msg)}</div>`;
+        errEl.innerHTML = `<div class="alert alert-error">Error técnico: ${esc(msg)}</div>`;
       }
     }
   }
@@ -2412,7 +2439,7 @@ Netflix: email@ejemplo.com, contraseña: Netflix2024"></textarea>
     setSearch, setFilterTag, setSortBy, copyPw, viewEntry, newEntry, editEntry, deleteEntry, togglePin, backToList,
     inferName, handleTagInput, addTagChip, removeTag, saveDetail, generateAndFill, toggleShowPw,
     setGenOpt, regenPw, parseReqs, refreshOTP, copyOTP,
-    parseImportText, confirmImport, handleFileDrop, handleFileSelect, processImportFile, doImportVault, showImportModal,
+    parseImportText, confirmImport, handleFileDrop, handleFileSelect, processImportFile, doImportVault, showImportModal, toggleImportPwVis,
     exportEncrypted, exportPlaintext, exportTransfer,
     updateSetting, changeMasterKey,
     runDiagnostics,
