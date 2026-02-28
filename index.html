@@ -2013,55 +2013,108 @@ Netflix: email@ejemplo.com, contraseña: Netflix2024"></textarea>
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      if (!data.salt || !data.ciphertext || !data.iv) throw new Error('Formato de vault inválido');
-      
-      showModal(`
-        <div class="modal">
-          <div class="modal-title">🔐 Importar Vault Cifrado</div>
-          <div class="modal-sub">Ingresá la Máster Key del archivo exportado para descifrar e importar sus entradas.</div>
-          <div id="import-key-error"></div>
-          <div class="field">
-            <label>Máster Key del archivo</label>
-            <div class="input-wrap">
-              <input type="password" id="import-key-input" placeholder="Clave del vault exportado">
-              <button type="button" onclick="UI.togglePw('import-key-input', this)">👁</button>
-            </div>
-          </div>
-          <div class="btn-row">
-            <button class="btn btn-secondary" onclick="UI.closeModal()">Cancelar</button>
-            <button class="btn btn-primary" onclick="UI.doImportVault(${JSON.stringify(JSON.stringify(data)).slice(1,-1)})">Importar</button>
-          </div>
-        </div>
-      `);
-      
-      window._importData = data;
-      document.getElementById('import-key-input').addEventListener('keydown', e => { if (e.key === 'Enter') doImportVault(); });
+
+      // Detect format: encrypted vault or plain transfer file
+      if (data._transfer === true && Array.isArray(data.entries)) {
+        // Plain transfer format (exported with "Transferir entre dispositivos")
+        window._importData = data;
+        window._importIsTransfer = true;
+        showImportModal();
+      } else if (data.salt && data.ciphertext && data.iv) {
+        // Standard encrypted vault
+        window._importData = data;
+        window._importIsTransfer = false;
+        showImportModal();
+      } else {
+        throw new Error('Formato no reconocido. ¿Es un archivo .vault.json exportado desde VAULT_SECURE?');
+      }
       statusEl.innerHTML = '';
     } catch (e) {
       statusEl.innerHTML = `<div class="alert alert-error">Error: ${esc(e.message)}</div>`;
     }
   }
 
+  function showImportModal() {
+    const isTransfer = window._importIsTransfer;
+    const container = document.getElementById('modal-container');
+    container.innerHTML = `
+      <div class="modal-overlay">
+        <div class="modal">
+          <div class="modal-title">📥 ${isTransfer ? 'Importar transferencia' : 'Importar Vault Cifrado'}</div>
+          <div class="modal-sub">${isTransfer
+            ? '⚡ Archivo de transferencia detectado. Ingresá la Máster Key <strong>de este dispositivo</strong> para cifrar e importar las entradas.'
+            : 'Ingresá la Máster Key <strong>del archivo exportado</strong> para descifrarlo e importar sus entradas.'
+          }</div>
+          <div id="import-key-error"></div>
+          <div class="field">
+            <label>${isTransfer ? 'Tu Máster Key (de este dispositivo)' : 'Máster Key del archivo exportado'}</label>
+            <div class="input-wrap">
+              <input type="password" id="import-key-input" placeholder="Ingresá la clave..." autofocus>
+              <button type="button" onclick="UI.togglePw('import-key-input', this)">👁</button>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-secondary" onclick="UI.closeModal()">Cancelar</button>
+            <button class="btn btn-primary" onclick="UI.doImportVault()">Importar</button>
+          </div>
+        </div>
+      </div>
+    `;
+    setTimeout(() => {
+      const inp = document.getElementById('import-key-input');
+      if (inp) {
+        inp.focus();
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') UI.doImportVault(); });
+      }
+    }, 50);
+  }
+
   async function doImportVault() {
     const key = document.getElementById('import-key-input').value;
     const errEl = document.getElementById('import-key-error');
-    if (!key) return;
-    errEl.innerHTML = '<div class="alert alert-warn">Descifrando...</div>';
+    if (!key) { errEl.innerHTML = '<div class="alert alert-error">Ingresá la clave.</div>'; return; }
+    errEl.innerHTML = '<div class="alert alert-warn">Procesando...</div>';
+
     try {
-      const data = await Crypto.decrypt(window._importData, key);
-      const imported = data.entries || [];
+      const data = window._importData;
+      const isTransfer = window._importIsTransfer;
+      let imported = [];
+
+      if (isTransfer) {
+        // Transfer file: entries are in plain JSON, protected only by needing the current device key to save
+        // Verify current device key is correct first
+        const currentVault = await Storage.getVault();
+        if (currentVault) {
+          await Crypto.decrypt(currentVault, key); // throws if wrong key
+        }
+        imported = data.entries || [];
+      } else {
+        // Encrypted vault: decrypt with the KEY FROM THE FILE
+        const decrypted = await Crypto.decrypt(data, key);
+        imported = decrypted.entries || [];
+      }
+
       const now = new Date().toISOString();
+      let added = 0;
       imported.forEach(e => {
         const existing = VaultState.getEntries().find(x => x.id === e.id);
-        if (!existing) VaultState.addEntry({ ...e, importedAt: now });
+        if (!existing) { VaultState.addEntry({ ...e, importedAt: now }); added++; }
       });
       await VaultState.save();
       closeModal();
       delete window._importData;
-      showToast(`✅ ${imported.length} entradas importadas del vault`);
+      delete window._importIsTransfer;
+      showToast(`✅ ${added} entradas importadas`);
+      setActiveNav('list');
+      currentTab = 'list';
       renderList();
-    } catch {
-      errEl.innerHTML = '<div class="alert alert-error">Clave incorrecta o archivo inválido.</div>';
+    } catch(e) {
+      const msg = e.message || '';
+      if (/decrypt|integrity|tag/i.test(msg) || msg === '') {
+        errEl.innerHTML = '<div class="alert alert-error">Clave incorrecta. Verificá que estés ingresando la clave correcta.</div>';
+      } else {
+        errEl.innerHTML = `<div class="alert alert-error">Error: ${esc(msg)}</div>`;
+      }
     }
   }
 
@@ -2074,6 +2127,20 @@ Netflix: email@ejemplo.com, contraseña: Netflix2024"></textarea>
         <div class="settings-section-title">Exportar Vault Cifrado (recomendado)</div>
         <p style="color:var(--text2);font-size:.88rem;margin-bottom:16px">Exporta el vault completo cifrado. Para importarlo necesitás tu Máster Key actual.</p>
         <button class="btn btn-primary" onclick="UI.exportEncrypted()">📥 Descargar vault.json cifrado</button>
+      </div>
+
+      <div class="settings-section" style="border-color:rgba(245,158,11,.4)">
+        <div class="settings-section-title" style="color:var(--yellow)">📱 Transferir a otro dispositivo</div>
+        <p style="color:var(--text2);font-size:.88rem;margin-bottom:8px">
+          Genera un archivo de transferencia para mover el vault a otro celular o PC.<br>
+          <strong>No necesita la clave del archivo</strong> — al importarlo usás la Máster Key del dispositivo destino.<br>
+          ⚠️ El archivo contiene contraseñas en texto plano. Borralo apenas lo importes.
+        </p>
+        <div class="toggle-row" style="margin-bottom:16px">
+          <label>Entiendo que debo borrarlo después de importarlo</label>
+          <input type="checkbox" id="transfer-confirm">
+        </div>
+        <button class="btn btn-secondary" onclick="UI.exportTransfer()" style="border-color:var(--yellow);color:var(--yellow)">📤 Exportar para transferir</button>
       </div>
 
       <div class="settings-section" style="border-color:rgba(239,68,68,.3)">
@@ -2102,6 +2169,24 @@ Netflix: email@ejemplo.com, contraseña: Netflix2024"></textarea>
     } catch (e) {
       showToast('❌ Error al exportar: ' + e.message);
     }
+  }
+
+  function exportTransfer() {
+    if (!document.getElementById('transfer-confirm').checked) {
+      showToast('⚠️ Marcá la confirmación primero');
+      return;
+    }
+    const entries = VaultState.getEntries();
+    const profile = VaultState.getUserProfile();
+    const blob = new Blob([JSON.stringify({
+      _transfer: true,
+      _note: 'VAULT_SECURE transfer file. Import on destination device and DELETE this file immediately.',
+      exportedAt: new Date().toISOString(),
+      entries,
+      userProfile: profile,
+    }, null, 2)], { type: 'application/json' });
+    downloadBlob(blob, `vault-transfer-${new Date().toISOString().slice(0,10)}.transfer.json`);
+    showToast('⚠️ Archivo listo. ¡Borralo después de importarlo!', 4000);
   }
 
   function exportPlaintext() {
@@ -2327,8 +2412,8 @@ Netflix: email@ejemplo.com, contraseña: Netflix2024"></textarea>
     setSearch, setFilterTag, setSortBy, copyPw, viewEntry, newEntry, editEntry, deleteEntry, togglePin, backToList,
     inferName, handleTagInput, addTagChip, removeTag, saveDetail, generateAndFill, toggleShowPw,
     setGenOpt, regenPw, parseReqs, refreshOTP, copyOTP,
-    parseImportText, confirmImport, handleFileDrop, handleFileSelect, processImportFile, doImportVault,
-    exportEncrypted, exportPlaintext,
+    parseImportText, confirmImport, handleFileDrop, handleFileSelect, processImportFile, doImportVault, showImportModal,
+    exportEncrypted, exportPlaintext, exportTransfer,
     updateSetting, changeMasterKey,
     runDiagnostics,
     togglePw, closeModal, showModal
